@@ -69,7 +69,11 @@ def generate():
             text += '| ' + ' | '.join(str(value) for value in row) + ' |\n'
     path = Path('docs/assignment1.md')
     marker = '<!-- GENERATED RESULTS: replaced by scripts/withdrawal_results.py -->'
-    path.write_text(path.read_text().split(marker)[0] + marker + '\n' + text)
+    original = path.read_text()
+    end_marker = '<!-- END GENERATED WITHDRAWAL RESULTS -->'
+    prefix, existing = original.split(marker, 1)
+    suffix = existing.split(end_marker, 1)[1] if end_marker in existing else ''
+    path.write_text(prefix + marker + '\n' + text + '\n' + end_marker + suffix)
     print(dict(counts), 'representative cases:', first)
     log = Path('docs/failure-log.md')
     content = log.read_text()
