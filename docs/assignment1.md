@@ -22,8 +22,7 @@ Assumptions:
 
 
 Scope: `bank.utils.FeesCalculator.calculateWithdrawalFee`; Assignment 1's
-Withdrawal specification. Session, deposit, and transfer deliverables belong
-to other team members and are not completed by this document.
+Withdrawal specification.
 
 Technique: **Robust Worst Case Boundary Value Analysis**. Choose min−,
 min, min+, nominal, max−, max, max+ for ordered domains and take their full
@@ -72,7 +71,42 @@ assumption. Their SKIP status means **no specified oracle**, not success or
 an unexecuted method. They do not establish missing validation as a defect.
 
 ### 3. FeesCalculator: Deposit (Weak Robust Equivalence Class)
-TODO
+We used Weak Robust Equivalence Class testing on `calculateDepositInterest(amount, balance, student)`. We split each input into classes where the spec treats every value the same, then picked one value from inside each class. "Weak" means every valid class is used at least once, but we do not test every combination. "Robust" means we also add invalid classes, one invalid input per test with all other inputs valid.
+
+The amount and balance cutoffs are different for students and non-students, so we made separate classes for each student value (student itself is a boolean with just two values and no invalid class).
+
+| Variable | Valid classes | Invalid classes |
+|---|---|---|
+| Student | true, false | none (boolean) |
+| Amount, student | A1: 0 < amount <= 50, A2: amount > 50 | amount <= 0 |
+| Amount, non-student | A3: 0 < amount <= 250, A4: amount > 250 | amount <= 0 |
+| Balance, student | B1: 0 <= balance <= 500, B2: 500 < balance <= 5,000, B3: balance > 5,000 | balance < 0 |
+| Balance, non-student | B4: 0 <= balance <= 2,500, B5: 2,500 < balance <= 10,000, B6: balance > 10,000 | balance < 0 |
+
+How we built the tests:
+1. Valid tests: for each student value, amount has 2 classes and balance has 3, so weak testing needs max(2, 3) = 3 tests, which is 6 in total. We paired the classes so each test lands on a different fee rule (and so a different expected fee %).
+2. Invalid tests: one test per invalid class for each student value (amount <= 0, balance < 0), so 4 tests, with the other inputs set to valid values.
+3. Total: 6 + 4 = 10 tests (D01-D10).
+
+| Test | Student | Amount class | Balance class | Spec rule (fee %) |
+|---|---|---|---|---|
+| D01 | Yes | A2 | B1 | amount > 50, balance <= 500: 0.25% |
+| D02 | Yes | A1 | B2 | amount <= 50, balance <= 5,000: no fee |
+| D03 | Yes | A1 | B3 | amount <= 50, balance > 5,000: 0.5% |
+| D04 | No | A4 | B4 | amount > 250, balance <= 2,500: 0.4% |
+| D05 | No | A3 | B5 | amount <= 250, balance <= 10,000: 0.1% |
+| D06 | No | A4 | B6 | amount > 250, balance > 2,500: 0.8% |
+| D07 | Yes | invalid (-100) | B2 | rejected |
+| D08 | Yes | A1 | invalid (-100) | rejected |
+| D09 | No | invalid (-100) | B5 | rejected |
+| D10 | No | A3 | invalid (-100) | rejected |
+
+Assumptions:
+- The spec calls it a deposit "fee", but the method is named `calculateDepositInterest`. We test it as the fee in the spec: fee = fee % x amount, with a tolerance of 0.0001.
+- A deposit amount must be more than $0, and a balance can't be negative. The spec gives no upper limit for either, so the top classes are open-ended.
+- The spec doesn't say what happens with invalid input. We assumed the method should reject it by throwing `IllegalArgumentException`.
+- We picked values well inside each class (e.g. $30, $100, $500 amounts), not on the edges, because equivalence class testing assumes any value in a class behaves the same. Edges are what boundary value analysis is for.
+- The code is in `src/test/java/bank/utils/DepositFeeTest.java`.
 
 ### 4. FeesCalculator: Transfer (Decision Table)
 We used Decision Table Analysis on `calculateTransferFee`. The spec is nested if/else conditions that each end in a fee percentage, so a decision table fits well.
@@ -220,7 +254,7 @@ Observed withdrawal totals: **413 PASS, 595 FAIL, 630 exploratory SKIP**, no err
 
 PASS observations are bounded by the assertion tolerance; exact successful return values were not logged.
 
-### Specification-derived cases
+#### Withdrawal specification-derived cases
 
 | ID | Amount | Balance | Student | Day | Expected fee | Observed | Result | Fault |
 |---|---|---|---|---|---|---|---|---|
@@ -1233,7 +1267,7 @@ PASS observations are bounded by the assertion tolerance; exact successful retur
 | W1636 | 10000.01 | 20000.01 | True | 6 | 0 | 10.00001 | FAIL | WF1 |
 | W1637 | 10000.01 | 20000.01 | True | 7 | 10.00001 | 0.0 | FAIL | WF1 |
 
-### Exploratory cases (no conformance oracle)
+#### Withdrawal exploratory cases (no conformance oracle)
 
 | ID | Amount | Balance | Student | Day | Expected fee | Observed | Result | Fault |
 |---|---|---|---|---|---|---|---|---|
@@ -1873,6 +1907,35 @@ PASS observations are bounded by the assertion tolerance; exact successful retur
 ### 3. Deposit
 | ID | Amount | Balance | Student | Expected Fee | Actual Fee | Pass/Fail |
 |---|---|---|---|---|---|---|
+| D01 | 100 | 300 | True | 0.25 | 0.2 | Fail |
+| D02 | 30 | 2000 | True | 0 | 0.06 | Fail |
+| D03 | 30 | 8000 | True | 0.15 | 0.15 | Pass |
+| D04 | 500 | 1000 | False | 2 | 0 | Fail |
+| D05 | 100 | 5000 | False | 0.1 | 0 | Fail |
+| D06 | 500 | 15000 | False | 4 | 2.5 | Fail |
+| D07 | -100 | 2000 | True | Rejected | Returned -0.2 | Fail |
+| D08 | 30 | -100 | True | Rejected | Returned 0.06 | Fail |
+| D09 | -100 | 5000 | False | Rejected | Returned -0.0 | Fail |
+| D10 | 100 | -100 | False | Rejected | Returned 0.0 | Fail |
+
+Rejected = throws `IllegalArgumentException`.
+
+**Results:** 1 passed, 9 failed (D01, D02, D04-D10).
+
+#### Deposit fault localization
+
+All faults below are in `bank.utils.FeesCalculator.calculateDepositInterest`.
+
+| Failure ID | Cases | Suspected statement | Justification |
+|---|---|---|---|
+| DF1 | D01 | Student branch: `amount > 100.00` (line 39) | The spec cutoff is $50, so a $100 deposit should get the "more than $50" rate, but the code sends it to the small-amount branch. |
+| DF2 | D01, D02 | Student, small amount, balance <= 5,000: `interestPercentage = 0.002` (line 50) | The spec says no fee here, and both observed fees equal amount x 0.002 (0.2 and 0.06). |
+| DF3 | D04, D06 | Non-student branch: `amount > 500.00` (line 54) | The spec cutoff is $250, so a $500 deposit should get the large-amount rates, but the code sends it to the small-amount branch. |
+| DF4 | D04, D05 | Non-student, small amount, balance <= 10,000: `interestPercentage = 0.0` (line 64) | The spec says 0.1%, but both cases return a fee of 0. |
+| DF5 | D06 | Non-student, small amount, balance > 10,000: `interestPercentage = 0.005` (line 62) | The spec says no fee for a small deposit with a balance over $10,000, but the observed fee is 500 x 0.005 = 2.5. |
+| DF6 | D07-D10 | Whole method: no check for amount <= 0 or balance < 0 | Under our assumption invalid input should be rejected, but the method just multiplies and returns a value (even a negative fee for D07). |
+
+D01, D04 and D06 each fail because of two faults working together (a wrong amount cutoff plus a wrong rate in the branch it leads to). Reading the code also shows wrong cutoffs and rates in the large-amount branches (lines 41-44 and 55-58), which no test reached, because DF1 and DF3 send our test values to the small-amount branch. Weak equivalence class testing picks only one value per class, so a wrong cutoff can hide the branch behind it.
 
 ### 4. Transfer
 | ID | Amount | From Balance | To Balance | Student | Expected Fee | Actual Fee | Pass/Fail |
