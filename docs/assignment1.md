@@ -75,7 +75,47 @@ an unexecuted method. They do not establish missing validation as a defect.
 TODO
 
 ### 4. FeesCalculator: Transfer (Decision Table)
-TODO
+We used Decision Table Analysis on `calculateTransferFee`. The spec is nested if/else conditions that each end in a fee percentage, so a decision table fits well.
+
+Conditions (each is true/false):
+- C1: the client is a student
+- C2: the amount is small (student: under $200; non-student: under $100)
+- C3: the source balance is low (student: under $2,000; non-student: under $4,000 if the amount is under $100, otherwise under $2,000)
+- C4: the destination balance is low (student: under $1,000; non-student: under $2,000 if the amount is under $100, otherwise under $1,000)
+
+How we built it:
+1. We pulled the four conditions out of the spec. The cutoffs change with student/non-student and with the amount, so C2, C3 and C4 are each treated as one true/false condition inside their branch.
+2. 4 conditions gives 2^4 = 16 combinations. Every one of them appears in the spec, so nothing was impossible or mergeable. That gives 16 rules, 8 for students and 8 for non-students.
+3. The fee percentage for each rule comes straight from the spec.
+4. We wrote one test per rule, using values that sit clearly inside each condition's region.
+
+Assumptions:
+- "Otherwise" at the last level means the destination balance is at or above the cutoff.
+- We used normal values inside each region, not boundary values, because a decision table tests combinations of conditions.
+- Fee = percentage x amount. The test allows a tolerance of 0.0001.
+- Values used: students use $100 (small) and $400 (large); non-students use $50 (small) and $400 (large). Balances are well below or above the cutoffs.
+- The code is in `src/test/java/bank/utils/TransferFeeTest.java`.
+
+T = condition true, F = condition false. Fee % is the % of the amount transferred.
+
+| Rule | Student | C2 | C3 | C4 | Fee % | Test |
+|---|---|---|---|---|---|---|
+| 1 | Yes | T | T | T | 0.1 | T01 |
+| 2 | Yes | T | T | F | 0.05 | T02 |
+| 3 | Yes | T | F | T | 0.05 | T03 |
+| 4 | Yes | T | F | F | 0.025 | T04 |
+| 5 | Yes | F | T | T | 0.05 | T05 |
+| 6 | Yes | F | T | F | 0.025 | T06 |
+| 7 | Yes | F | F | T | 0.25 | T07 |
+| 8 | Yes | F | F | F | 0.125 | T08 |
+| 9 | No | T | T | T | 0.2 | T09 |
+| 10 | No | T | T | F | 0.1 | T10 |
+| 11 | No | T | F | T | 1 | T11 |
+| 12 | No | T | F | F | 0.5 | T12 |
+| 13 | No | F | T | T | 0.2 | T13 |
+| 14 | No | F | T | F | 0.1 | T14 |
+| 15 | No | F | F | T | 0.5 | T15 |
+| 16 | No | F | F | F | 0.25 | T16 |
 
 ## Part 2: Test Cases and Results
 
@@ -1837,3 +1877,36 @@ PASS observations are bounded by the assertion tolerance; exact successful retur
 ### 4. Transfer
 | ID | Amount | From Balance | To Balance | Student | Expected Fee | Actual Fee | Pass/Fail |
 |---|---|---|---|---|---|---|---|
+| T01 | 100 | 1000 | 500 | True | 0.1 | 2.5 | Fail |
+| T02 | 100 | 1000 | 1500 | True | 0.05 | 1.25 | Fail |
+| T03 | 100 | 3000 | 500 | True | 0.05 | 2.5 | Fail |
+| T04 | 100 | 3000 | 1500 | True | 0.025 | 1.25 | Fail |
+| T05 | 400 | 1000 | 500 | True | 0.2 | 10 | Fail |
+| T06 | 400 | 1000 | 1500 | True | 0.1 | 5 | Fail |
+| T07 | 400 | 3000 | 500 | True | 1 | 10 | Fail |
+| T08 | 400 | 3000 | 1500 | True | 0.5 | 5 | Fail |
+| T09 | 50 | 2000 | 1000 | False | 0.1 | 2.5 | Fail |
+| T10 | 50 | 2000 | 3000 | False | 0.05 | 2.5 | Fail |
+| T11 | 50 | 6000 | 1000 | False | 0.5 | 2.5 | Fail |
+| T12 | 50 | 6000 | 3000 | False | 0.25 | 2.5 | Fail |
+| T13 | 400 | 1000 | 500 | False | 0.8 | 20 | Fail |
+| T14 | 400 | 1000 | 1500 | False | 0.4 | 22 | Fail |
+| T15 | 400 | 3000 | 500 | False | 2 | 20 | Fail |
+| T16 | 400 | 3000 | 1500 | False | 1 | 22 | Fail |
+
+**Results:** 0 passed, 16 failed.
+
+#### Transfer fault localization
+
+All faults below are in `bank.utils.FeesCalculator.calculateTransferFee`.
+
+| Failure ID | Cases | Suspected statement | Justification |
+|---|---|---|---|
+| TF1 | T01-T08 | Student branch: all eight `feePercentage` values | Every student case returns a fee far above the spec percentage (about 10x, and 100x where amount < 100 and from >= 1000). |
+| TF2 | T01-T04 | Student branch: `amount < 100.00` | The spec says small means under $200, so $100 should count as small but the code sends it to the large branch. |
+| TF3 | T01, T02, T05, T06 | Student branch: `fromAccountBalance < 1000.00` | The spec says a low source balance is under $2,000, so $1,000 should count as low but the code treats it as high. |
+| TF4 | T09-T16 | Non-student branch: all eight `feePercentage` values | Every non-student case returns a fee far above the spec percentage. |
+| TF5 | T09, T10, T11, T13, T14 | Non-student branch: `fromAccountBalance < 1000.00` and `toAccountBalance < 1000.00` | The spec cutoffs are $4,000 / $2,000 (source) and $2,000 (destination, amount under $100), so balances like from = $2,000 or to = $1,000 are low in the spec but high in the code. |
+| TF6 | T14, T16 | Non-student branch, amount >= 100, both balances high: `feePercentage = 0.055` | The spec says 0.25%, and 0.055 is out of line even with the other wrong values. |
+
+Because the percentages are wrong in every branch, every test fails anyway, so these tests can't prove the cutoff faults (TF2, TF3, TF5) on their own. We found those by reading the code next to the spec.
