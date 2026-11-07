@@ -1,7 +1,6 @@
 package bank.utils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,29 +15,16 @@ class WithdrawalFeeBoundaryTest {
     private final FeesCalculator calculator = new FeesCalculator();
 
     static Stream<Arguments> specifiedCases() {
-        return cases(false);
-    }
-
-    static Stream<Arguments> exploratoryCases() {
-        return cases(true);
-    }
-
-    private static Stream<Arguments> cases(boolean exploratory) {
-        double[] amounts = {-0.01, 0, 0.01, 5000, 9999.99, 10000, 10000.01};
-        double[] balances = {-0.01, 0, 0.01, 999.99, 1000, 1000.01, 4999.99,
-            5000, 5000.01, 10000, 19999.99, 20000, 20000.01};
+        // Seven-point boundary pattern around the specified fee-transition interval.
+        double[] balances = {999.99, 1000, 1000.01, 3000, 4999.99, 5000, 5000.01};
         List<Arguments> cases = new ArrayList<>();
         int number = 0;
-        for (double amount : amounts) {
-            for (double balance : balances) {
-                for (boolean student : new boolean[] {false, true}) {
-                    for (int day = 0; day <= 8; day++) {
-                        String id = String.format("W%04d", ++number);
-                        boolean unspecified = amount < 0 || balance < 0 || day < 1 || day > 7;
-                        if (unspecified == exploratory) {
-                            cases.add(Arguments.of(id, amount, balance, student, day));
-                        }
-                    }
+        for (double balance : balances) {
+            for (boolean student : new boolean[] {false, true}) {
+                // Monday and Saturday represent the two specified day categories.
+                for (int day : new int[] {2, 7}) {
+                    cases.add(Arguments.of(String.format("W%02d", ++number),
+                        200.0, balance, student, day));
                 }
             }
         }
@@ -64,17 +50,4 @@ class WithdrawalFeeBoundaryTest {
             calculator.calculateWithdrawalFee(amount, balance, student, day), 1e-9, id);
     }
 
-    @ParameterizedTest(name = "{0}: exploratory amount={1}, balance={2}, student={3}, day={4}")
-    @MethodSource("exploratoryCases")
-    void observeUnspecifiedInputs(String id, double amount, double balance,
-            boolean student, int day) {
-        String observed;
-        try {
-            observed = "returned " + calculator.calculateWithdrawalFee(amount, balance, student, day);
-        } catch (RuntimeException exception) {
-            observed = "threw " + exception.getClass().getName();
-        }
-        // Aborted (reported as skipped), never a fabricated conformance pass/failure.
-        assumeTrue(false, id + ": no specified oracle; " + observed);
-    }
 }

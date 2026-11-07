@@ -17,3 +17,18 @@ Source inspection preceded test execution, so this was not a blind experiment;
 expected values nevertheless follow the assignment specification alone.
 Do not replace missing timing measurements with invented estimates. For future
 sessions, record start, first failing run, and diagnosis completion per fault.
+
+## November 6 revision — 28-case threshold-focused suite
+
+The original W0001–W1638 IDs above refer to the superseded expanded suite,
+retained here as historical discovery records. Current documentation/test IDs:
+
+| Fault | Current representative | Current failing cases |
+|---|---|---|
+| WF1 | W03 | W03–W04, W07–W08, W11–W12, W15–W16, W19–W20, W23–W24, W27–W28 |
+| WF2 | W01 | W01–W02 |
+| WF3 | W21 | W21–W22, W25–W26 |
+
+This revision removes arbitrary amount/balance sampling caps and exploratory
+cases; it does not discover new faults. New per-fault discovery/diagnosis times
+are therefore not claimed. Production code remains unchanged.
